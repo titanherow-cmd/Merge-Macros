@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-merge_macros.py - v3.32.0
+merge_macros.py - v3.32.1
 - NEW: Combination history system (Feature 1)
-- NEW: Smart jitter with exclusion zones (Feature 2)  
+- NEW: Smart jitter with exclusion zones + rapid click protection (Feature 2 - IMPROVED)
 - NEW: Optional folders support (Feature 3)
 - Alphabetical naming: Raw (A,B,C) -> Ineff (D,E,F) -> Normal (G,H,I...)
 - DROP ONLY insertion for Mining folders
@@ -13,7 +13,7 @@ import argparse, json, random, re, sys, os, math, shutil
 from pathlib import Path
 
 # Script version
-VERSION = "v3.32.0"
+VERSION = "v3.32.1"
 
 
 def load_folder_whitelist(root_path: Path) -> dict:
@@ -435,30 +435,51 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
 
 def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
     """
-    NEW FEATURE 2: SMART JITTER with exclusion zones
+    IMPROVED SMART JITTER v3.32.1
     
     Add realistic jitter to 21-32% of TOTAL movements (not per-move).
-    NEVER jitter within 1 second before/after ANY click to prevent misclicks.
+    NEVER jitter within 1 second before/after ANY click.
+    EXTRA PROTECTION for rapid click sequences (double-clicks, spam clicks).
     
     Returns (events_with_jitter, jitter_count, total_moves, jitter_percentage).
     """
     if not events or len(events) < 2:
         return events, 0, 0, 0.0
     
-    # Find ALL click events (Click, LeftDown, RightDown, DragStart)
+    # Step 1: Detect rapid click sequences (double-clicks, spam clicks)
+    protected_ranges = detect_rapid_click_sequences(events)
+    
+    # Step 2: Build exclusion zones
+    exclusion_zones = []  # List of (start_time, end_time) tuples
+    
+    # Add 1000ms buffer around ALL individual clicks
     click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
-    click_times = set()
     for e in events:
         if e.get('Type') in click_types:
-            click_times.add(e.get('Time', 0))
+            click_time = e.get('Time', 0)
+            exclusion_zones.append((click_time - 1000, click_time + 1000))
     
-    # Find safe MouseMove events (NOT within 1000ms of any click)
+    # Add EXTENDED buffer around rapid click sequences
+    # For sequences, extend 1500ms before first click and 1500ms after last click
+    for start_idx, end_idx in protected_ranges:
+        if start_idx < len(events) and end_idx < len(events):
+            first_click_time = events[start_idx].get('Time', 0)
+            last_click_time = events[end_idx].get('Time', 0)
+            # Extended buffer: 1500ms before/after the sequence
+            exclusion_zones.append((first_click_time - 1500, last_click_time + 1500))
+    
+    # Step 3: Find safe MouseMove events (NOT in any exclusion zone)
     safe_movements = []
     for i, event in enumerate(events):
         if event.get('Type') == 'MouseMove':
             event_time = event.get('Time', 0)
-            # Check if safe (more than 1000ms from ANY click)
-            is_safe = all(abs(event_time - ct) > 1000 for ct in click_times)
+            # Check if this time is safe (not in any exclusion zone)
+            is_safe = True
+            for zone_start, zone_end in exclusion_zones:
+                if zone_start <= event_time <= zone_end:
+                    is_safe = False
+                    break
+            
             if is_safe:
                 safe_movements.append((i, event))
     
