@@ -1,4 +1,4 @@
-name: Merge macros (optimized v3.32.2)
+name: Merge macros (optimized v3.32.3)
 
 on:
   workflow_dispatch:
@@ -77,7 +77,7 @@ jobs:
       - name: Display settings
         run: |
           echo "========================================"
-          echo "MERGE MACROS v3.32.2"
+          echo "MERGE MACROS v3.32.3"
           echo "========================================"
           echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
           echo "Versions: ${{ github.event.inputs.versions }}"
