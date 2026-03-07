@@ -21,6 +21,11 @@ on:
         description: 'Target duration per merged file *'
         required: true
         default: '35'
+      specific_folders_input:
+        description: 'Specific folders to include (one per line, leave empty to use saved list)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -49,6 +54,26 @@ jobs:
           fi
           echo "BUNDLE_SEQ=$VAL" >> "$GITHUB_ENV"
       
+      - name: Process specific folders input
+        id: process_folders
+        run: |
+          SPECIFIC_INPUT="${{ github.event.inputs.specific_folders_input }}"
+          
+          if [ -n "$SPECIFIC_INPUT" ]; then
+            # User provided input - create temporary file
+            echo "$SPECIFIC_INPUT" > /tmp/specific_folders_temp.txt
+            echo "FOLDERS_FILE=/tmp/specific_folders_temp.txt" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=UI input (temporary)" >> "$GITHUB_ENV"
+          elif [ -f ".github/specific folders to include for merge.txt" ]; then
+            # Use saved file
+            echo "FOLDERS_FILE=.github/specific folders to include for merge.txt" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=saved file (.github/specific folders to include for merge.txt)" >> "$GITHUB_ENV"
+          else
+            # No input and no file
+            echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
+          fi
+      
       - name: Display settings
         run: |
           echo "========================================"
@@ -63,7 +88,12 @@ jobs:
             echo "Chat: DISABLED"
           fi
           if [ "${{ inputs.use_whitelist }}" = "true" ]; then
-            echo "Specific folders: ENABLED (filter mode)"
+            echo "Specific folders: ENABLED"
+            echo "Source: ${{ env.FOLDERS_SOURCE }}"
+            if [ -n "${{ env.FOLDERS_FILE }}" ]; then
+              echo "Folders:"
+              cat "${{ env.FOLDERS_FILE }}"
+            fi
           else
             echo "Specific folders: DISABLED (all folders)"
           fi
@@ -85,8 +115,8 @@ jobs:
           fi
           
           # Add --use-whitelist if enabled (default is enabled)
-          if [ "${{ inputs.use_whitelist }}" = "true" ]; then
-            CMD="$CMD --use-whitelist"
+          if [ "${{ inputs.use_whitelist }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
+            CMD="$CMD --use-whitelist ${{ env.FOLDERS_FILE }}"
           fi
           
           # Execute
